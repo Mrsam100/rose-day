@@ -1,12 +1,35 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, lazy, Suspense } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import OpeningScreen from './components/OpeningScreen'
 import TypewriterMessage from './components/TypewriterMessage'
-import RoseScene from './components/RoseScene'
+
+// Lazy-load scenes: mobile gets CSS-only (~5KB), desktop gets Three.js (~1.2MB)
+const RoseScene = lazy(() => import('./components/RoseScene'))
+const RoseCSSScene = lazy(() => import('./components/RoseCSSScene'))
+
+function detectMobile() {
+  if (typeof window === 'undefined') return false
+  return window.innerWidth < 768 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+}
+
+function SceneLoader() {
+  return (
+    <div className="fixed inset-0 flex items-center justify-center bg-gradient-to-b from-[#1a0610] via-[#2a0a18] to-[#1a0610]">
+      <p className="text-rose-400 font-sans text-lg animate-pulse">
+        Preparing your rose...
+      </p>
+    </div>
+  )
+}
 
 export default function App() {
-  // 0 = opening, 1 = typewriter, 2 = rose scene (includes final message)
+  // 0 = opening, 1 = typewriter, 2 = rose scene
   const [step, setStep] = useState(0)
+  const [isMobile, setIsMobile] = useState(detectMobile)
+
+  useEffect(() => {
+    setIsMobile(detectMobile())
+  }, [])
 
   const goToTypewriter = useCallback(() => setStep(1), [])
   const goToRose = useCallback(() => setStep(2), [])
@@ -22,7 +45,13 @@ export default function App() {
           <TypewriterMessage key="typewriter" onNext={goToRose} />
         )}
         {step === 2 && (
-          <RoseScene key="rose" onReplay={replay} />
+          <Suspense key="scene" fallback={<SceneLoader />}>
+            {isMobile ? (
+              <RoseCSSScene onReplay={replay} />
+            ) : (
+              <RoseScene onReplay={replay} />
+            )}
+          </Suspense>
         )}
       </AnimatePresence>
     </div>
