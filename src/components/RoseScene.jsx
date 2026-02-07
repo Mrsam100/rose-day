@@ -1,7 +1,6 @@
-import { Suspense, useState, useCallback } from 'react'
+import { Suspense, useState, useCallback, useEffect } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Environment } from '@react-three/drei'
-import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 import { motion, AnimatePresence } from 'framer-motion'
 import Rose3D from './Rose3D'
 import HeartParticles3D from './HeartParticles3D'
@@ -22,10 +21,45 @@ function Loader() {
   )
 }
 
+// Lazy-load postprocessing only on desktop
+let EffectComposer, Bloom, Vignette
+const PostProcessing = ({ loaded }) => {
+  if (!loaded || !EffectComposer) return null
+  return (
+    <EffectComposer>
+      <Bloom
+        intensity={0.8}
+        luminanceThreshold={0.3}
+        luminanceSmoothing={0.9}
+        mipmapBlur
+        radius={0.85}
+      />
+      <Vignette offset={0.3} darkness={0.7} eskil={false} />
+    </EffectComposer>
+  )
+}
+
 export default function RoseScene({ onReplay }) {
   const [bloomDone, setBloomDone] = useState(false)
   const [showText, setShowText] = useState(false)
   const [showFinal, setShowFinal] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
+  const [ppLoaded, setPpLoaded] = useState(false)
+
+  useEffect(() => {
+    const mobile = window.innerWidth < 768 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+    setIsMobile(mobile)
+
+    // Load postprocessing only on desktop
+    if (!mobile) {
+      import('@react-three/postprocessing').then((mod) => {
+        EffectComposer = mod.EffectComposer
+        Bloom = mod.Bloom
+        Vignette = mod.Vignette
+        setPpLoaded(true)
+      })
+    }
+  }, [])
 
   const handleBloomComplete = useCallback(() => {
     setBloomDone(true)
@@ -46,7 +80,7 @@ export default function RoseScene({ onReplay }) {
         {/* Background gradient */}
         <div className="absolute inset-0 bg-gradient-to-b from-[#1a0610] via-[#2a0a18] to-[#1a0610]" />
 
-        {/* Subtle radial glow behind rose */}
+        {/* Subtle radial glow */}
         <div
           className="absolute inset-0 pointer-events-none"
           style={{
@@ -55,99 +89,62 @@ export default function RoseScene({ onReplay }) {
           }}
         />
 
-        <FloatingHearts count={12} />
+        <FloatingHearts count={isMobile ? 8 : 12} />
 
-        {/* 3D Canvas */}
-        <div className="absolute inset-0">
+        {/* 3D Canvas — pointer-events:none lets touches pass through for scroll */}
+        <div
+          className="absolute inset-0"
+          style={{ touchAction: 'pan-y' }}
+        >
           <Suspense fallback={<Loader />}>
             <Canvas
               camera={{ position: [0, 0.5, 3.2], fov: 38 }}
-              dpr={[1, 2]}
-              gl={{ antialias: true, alpha: true, toneMapping: 3 }}
-              style={{ background: 'transparent' }}
+              dpr={isMobile ? 1 : [1, 2]}
+              gl={{
+                antialias: !isMobile,
+                alpha: true,
+                toneMapping: 3,
+                powerPreference: isMobile ? 'low-power' : 'high-performance',
+              }}
+              style={{ background: 'transparent', touchAction: 'pan-y' }}
+              frameloop="always"
             >
-              {/* ── Lighting rig ──────────────────────────── */}
-              {/* Warm ambient fill */}
-              <ambientLight intensity={0.25} color="#ffd4e0" />
+              {/* ── Lighting ── */}
+              <ambientLight intensity={isMobile ? 0.4 : 0.25} color="#ffd4e0" />
+              <directionalLight position={[3, 5, 2]} intensity={1.5} color="#fff5f8" />
+              <directionalLight position={[-3, 3, -1]} intensity={0.5} color="#ff8fab" />
 
-              {/* Key light (warm white from upper-right) */}
-              <directionalLight
-                position={[3, 5, 2]}
-                intensity={1.5}
-                color="#fff5f8"
-                castShadow
-                shadow-mapSize-width={1024}
-                shadow-mapSize-height={1024}
-              />
+              {!isMobile && (
+                <>
+                  <directionalLight position={[0, 2, -3]} intensity={0.8} color="#ff6b8a" />
+                  <spotLight position={[0, 5, 1]} intensity={1.0} angle={0.4} penumbra={1} color="#ffe0ea" />
+                  <pointLight position={[0, -1, 1]} intensity={0.3} color="#ff4466" distance={4} />
+                  <Environment preset="sunset" environmentIntensity={0.4} />
+                </>
+              )}
 
-              {/* Fill light (pink from left) */}
-              <directionalLight
-                position={[-3, 3, -1]}
-                intensity={0.5}
-                color="#ff8fab"
-              />
+              {/* Rose */}
+              <Rose3D onBloomComplete={handleBloomComplete} isMobile={isMobile} />
 
-              {/* Rim light (behind, creates edge glow) */}
-              <directionalLight
-                position={[0, 2, -3]}
-                intensity={0.8}
-                color="#ff6b8a"
-              />
+              {/* Heart particles */}
+              <HeartParticles3D count={isMobile ? 6 : 15} />
 
-              {/* Top spot for dramatic top-down highlight */}
-              <spotLight
-                position={[0, 5, 1]}
-                intensity={1.0}
-                angle={0.4}
-                penumbra={1}
-                color="#ffe0ea"
-                castShadow
-              />
+              {/* Postprocessing: desktop only */}
+              {!isMobile && <PostProcessing loaded={ppLoaded} />}
 
-              {/* Subtle under-glow */}
-              <pointLight
-                position={[0, -1, 1]}
-                intensity={0.3}
-                color="#ff4466"
-                distance={4}
-              />
-
-              {/* Environment for realistic reflections */}
-              <Environment preset="sunset" environmentIntensity={0.4} />
-
-              {/* The rose */}
-              <Rose3D onBloomComplete={handleBloomComplete} />
-
-              {/* Heart particles floating around */}
-              <HeartParticles3D count={15} />
-
-              {/* ── Postprocessing ────────────────────────── */}
-              <EffectComposer>
-                <Bloom
-                  intensity={0.8}
-                  luminanceThreshold={0.3}
-                  luminanceSmoothing={0.9}
-                  mipmapBlur
-                  radius={0.85}
+              {/* OrbitControls: desktop only */}
+              {!isMobile && (
+                <OrbitControls
+                  enableZoom={false}
+                  enablePan={false}
+                  maxPolarAngle={Math.PI * 0.65}
+                  minPolarAngle={Math.PI * 0.3}
+                  autoRotate={bloomDone}
+                  autoRotateSpeed={0.4}
+                  dampingFactor={0.05}
+                  enableDamping
                 />
-                <Vignette
-                  offset={0.3}
-                  darkness={0.7}
-                  eskil={false}
-                />
-              </EffectComposer>
-
-              {/* Controls */}
-              <OrbitControls
-                enableZoom={false}
-                enablePan={false}
-                maxPolarAngle={Math.PI * 0.65}
-                minPolarAngle={Math.PI * 0.3}
-                autoRotate={bloomDone}
-                autoRotateSpeed={0.4}
-                dampingFactor={0.05}
-                enableDamping
-              />
+              )}
             </Canvas>
           </Suspense>
         </div>
@@ -192,10 +189,8 @@ export default function RoseScene({ onReplay }) {
                 </motion.div>
               </motion.div>
 
-              {/* Spacer */}
               <div className="flex-1" />
 
-              {/* Bottom: Quote + scroll */}
               <div className="flex flex-col items-center gap-4">
                 <motion.div
                   className="glass rounded-2xl px-8 py-5 mx-4 max-w-md text-center"
@@ -235,7 +230,7 @@ export default function RoseScene({ onReplay }) {
         </AnimatePresence>
       </section>
 
-      {/* ── FINAL MESSAGE SECTION ─────────────────────────────── */}
+      {/* ── FINAL MESSAGE ─────────────────────────────────────── */}
       {showFinal && (
         <section id="final-section">
           <FinalMessage onReplay={onReplay} />
