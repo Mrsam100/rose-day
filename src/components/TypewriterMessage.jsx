@@ -39,7 +39,7 @@ function Typewriter({ text, speed = 45, onComplete }) {
 export default function TypewriterMessage({ onNext }) {
   const [showButton, setShowButton] = useState(false)
 
-  const message = `Neelam…\nI don't know how roses bloom,\nbut I know my heart blooms\nevery time I think of you.`
+  const message = `Neelam…\nI have something special for you.\nJust wait and watch.`
 
   const handleTypingComplete = useCallback(() => {
     setShowButton(true)
